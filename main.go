@@ -13,11 +13,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	var srv http.Server
 	srv.Addr = "0.0.0.0:8064"
 
@@ -83,7 +85,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `<html>
 		<head><title>Galilego HTTP/2 web gallery</title>
 		<body>
-			<h1>Content of <a href="`+r.RequestURI+`">`+r.RequestURI+`</a></h1>
+			<h1><a href="/">Retourner a l'accueil</a> - <a href="`+r.RequestURI+`">`+r.RequestURI+`</a></h1>
 	`+galHtml+`
 		</body></html>`)
 	}
