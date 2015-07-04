@@ -48,7 +48,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, `<html>
 	<head><title>Galilego HTTP/2 web gallery</title>
 	<body>
-		<h1>Content of <a href="/">/</a></h1>
+		<h1 style="font-size: 1.5em;">Content of <a href="/">/</a></h1>
 `+dirHtml+`
 	</body></html>`)
 }
@@ -99,7 +99,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 		<title>Galilego HTTP/2 web gallery</title>
 	</head>
 	<body>
-		<h1>Navigation: `+galNav+`</h1>
+	<h1 style="font-size: 1.5em;">Navigation: `+galNav+`</h1>
 		<p>Utilisez les fleches pour naviguer. Cliquez sur une image pour telecharger la version originale.</p>
 		`+dirHtml+`
 		<!-- Jssor Slider Begin -->
@@ -246,6 +246,7 @@ var jssorParameters string = `
 			];
 			var options = {
 				$FillMode: 1,                                   //[Optional] The way to fill image in slide, 0 stretch, 1 contain (keep aspect ratio and put all inside slide), 2 cover (keep aspect ratio and cover whole slide), 4 actual size, 5 contain for large image, actual size for small image, default value is 0
+				$Loop: 2,					//[Optional] Enable loop(circular) of carousel or not, 0: stop, 1: loop, 2 rewind, default value is 1
 				$AutoPlay: true,				//[Optional] Whether to auto play, to enable slideshow, this option must be set to true, default value is false
 				$AutoPlayInterval: 3000,			//[Optional] Interval (in milliseconds) to go for next slide since the previous stopped if the slider is auto playing, default value is 3000
 				$PauseOnHover: 1,				//[Optional] Whether to pause when mouse over if a slider is auto playing, 0 no pause, 1 pause for desktop, 2 pause for touch device, 3 pause for desktop and touch device, 4 freeze for desktop, 8 freeze for touch device, 12 freeze for desktop and touch device, default value is 1
