@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -86,6 +87,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 		img.Close()
 	} else {
 		dirHtml, imgHtml := genGalleryHtml(galpath)
+		galNav := getGalNav(r.RequestURI)
 		io.WriteString(w, `<!DOCTYPE html>
 <html>
 	<head>
@@ -97,7 +99,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 		<title>Galilego HTTP/2 web gallery</title>
 	</head>
 	<body>
-		<h1><a href="/">Retourner a l'accueil</a> - <a href="`+r.RequestURI+`">`+r.RequestURI+`</a></h1>
+		<h1>Navigation: `+galNav+`</h1>
 		<p>Utilisez les fleches pour naviguer. Cliquez sur une image pour telecharger la version originale.</p>
 		`+dirHtml+`
 		<!-- Jssor Slider Begin -->
@@ -221,6 +223,19 @@ func getImage(path string, size uint) (fd *os.File, modtime time.Time, err error
 		modtime = fi.ModTime()
 		return
 	}
+}
+
+func getGalNav(reqPath string) (galNav string) {
+	comps := strings.Split(reqPath, "/")
+	var prefix string
+	for _, comp := range comps {
+		if comp == "" {
+			continue
+		}
+		galNav += fmt.Sprintf(`/&nbsp;<a href="%s/%s/">%s</a>&nbsp;`, prefix, comp, comp)
+		prefix += "/" + comp
+	}
+	return
 }
 
 var jssorParameters string = `
