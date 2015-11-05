@@ -29,14 +29,12 @@ import (
 // listen: 0.0.0.0:8064
 // certfile: /etc/galilego/server.crt
 // keyfile: /etc/galilego/server.key
-// users:
-//	bob: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1
-//	alice: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1
+// htpasswdfile: /etc/galilego/users.htpasswd
 type configuration struct {
 	Host              string
 	Listen            string
 	CertFile, KeyFile string
-	Users             map[string]string
+	HtPasswdFile      string
 }
 
 var conf configuration
@@ -73,12 +71,15 @@ func main() {
 	var srv http.Server
 	srv.Addr = conf.Listen
 
-	authenticator := auth.NewBasicAuthenticator(conf.Host, Secret)
-
 	r := mux.NewRouter()
-
-	r.HandleFunc("/", auth.JustCheck(authenticator, home)).Methods("GET")
-	r.HandleFunc("/gallery/{galpath:.*}", auth.JustCheck(authenticator, serveGallery)).Methods("GET")
+	if conf.HtPasswdFile != "" {
+		authenticator := auth.NewBasicAuthenticator(conf.Host, auth.HtpasswdFileProvider(conf.HtPasswdFile))
+		r.HandleFunc("/", auth.JustCheck(authenticator, home)).Methods("GET")
+		r.HandleFunc("/gallery/{galpath:.*}", auth.JustCheck(authenticator, serveGallery)).Methods("GET")
+	} else {
+		r.HandleFunc("/", home).Methods("GET")
+		r.HandleFunc("/gallery/{galpath:.*}", serveGallery).Methods("GET")
+	}
 
 	fs := http.FileServer(http.Dir(`./statics`))
 	r.Handle("/statics/{staticfile}", http.StripPrefix("/statics", fs)).Methods("GET")
@@ -88,12 +89,6 @@ func main() {
 	log.Fatal(srv.ListenAndServeTLS(conf.CertFile, conf.KeyFile))
 }
 
-func Secret(user, realm string) string {
-	if _, ok := conf.Users[user]; ok {
-		return conf.Users[user]
-	}
-	return ""
-}
 func home(w http.ResponseWriter, r *http.Request) {
 	// The "/" pattern matches everything, so we need to check
 	// that we're at the root here.
