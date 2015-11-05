@@ -1,0 +1,7 @@
+host: example.net
+listen: 0.0.0.0:8064
+certfile: /etc/galilego/server.crt
+keyfile: /etc/galilego/server.key
+users:
+    bob: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1
+    alice: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1

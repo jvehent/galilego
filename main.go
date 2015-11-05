@@ -1,42 +1,99 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/bradfitz/http2"
-	"github.com/gorilla/mux"
-	"github.com/nfnt/resize"
 	"image"
 	"image/jpeg"
 	"io"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	auth "github.com/abbot/go-http-auth"
+	"github.com/bradfitz/http2"
+	"github.com/gorilla/mux"
+	"github.com/nfnt/resize"
+	"gopkg.in/yaml.v2"
 )
 
+// example configuration file:
+// host: example.net
+// listen: 0.0.0.0:8064
+// certfile: /etc/galilego/server.crt
+// keyfile: /etc/galilego/server.key
+// users:
+//	bob: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1
+//	alice: $1$dlPL2MqE$oQmn16q49SqdmhenQuNgs1
+type configuration struct {
+	Host              string
+	Listen            string
+	CertFile, KeyFile string
+	Users             map[string]string
+}
+
+var conf configuration
+
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "%s - HTTP/2 web gallery written in Go\n"+
+			"Usage: %s -c config.yaml\n",
+			os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
+	var config = flag.String("c", "config.yaml", "Load configuration from file")
+	var makehash = flag.String("makehash", "s3cr3t", "make a password hash")
+	flag.Parse()
+
+	if *makehash != "s3cr3t" {
+		fmt.Printf("$1$%s\n", auth.MD5Crypt(
+			[]byte(*makehash),
+			randomBytes(5),
+			randomBytes(5)))
+		os.Exit(0)
+	}
+
+	// load the local configuration file
+	fd, err := ioutil.ReadFile(*config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = yaml.Unmarshal(fd, &conf)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+
 	var srv http.Server
-	srv.Addr = "0.0.0.0:8064"
+	srv.Addr = conf.Listen
+
+	authenticator := auth.NewBasicAuthenticator(conf.Host, Secret)
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/", home).Methods("GET")
-	r.HandleFunc("/gallery/{galpath:.*}", serveGallery).Methods("GET")
+	r.HandleFunc("/", auth.JustCheck(authenticator, home)).Methods("GET")
+	r.HandleFunc("/gallery/{galpath:.*}", auth.JustCheck(authenticator, serveGallery)).Methods("GET")
 
 	fs := http.FileServer(http.Dir(`./statics`))
 	r.Handle("/statics/{staticfile}", http.StripPrefix("/statics", fs)).Methods("GET")
 
 	http.Handle("/", r)
 	http2.ConfigureServer(&srv, &http2.Server{})
-	log.Fatal(srv.ListenAndServeTLS("server.crt", "server.key"))
+	log.Fatal(srv.ListenAndServeTLS(conf.CertFile, conf.KeyFile))
 }
 
+func Secret(user, realm string) string {
+	if _, ok := conf.Users[user]; ok {
+		return conf.Users[user]
+	}
+	return ""
+}
 func home(w http.ResponseWriter, r *http.Request) {
 	// The "/" pattern matches everything, so we need to check
 	// that we're at the root here.
@@ -458,3 +515,15 @@ var jssorStyle string = `
 		</div>
 		<!--#endregion Thumbnail Navigator Skin End -->
 `
+
+func randomBytes(l int) []byte {
+	bytes := make([]byte, l)
+	for i := 0; i < l; i++ {
+		bytes[i] = byte(randInt(65, 90))
+	}
+	return bytes
+}
+
+func randInt(min int, max int) int {
+	return min + rand.Intn(max-min)
+}
