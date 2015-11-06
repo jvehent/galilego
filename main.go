@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"image"
@@ -17,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	auth "github.com/abbot/go-http-auth"
 	"github.com/bradfitz/http2"
 	"github.com/gorilla/mux"
 	"github.com/nfnt/resize"
@@ -29,12 +29,16 @@ import (
 // listen: 0.0.0.0:8064
 // certfile: /etc/galilego/server.crt
 // keyfile: /etc/galilego/server.key
-// htpasswdfile: /etc/galilego/users.htpasswd
+// authenticate: true
+// users:
+//	bob: bobpassword
+//	alice: t00m4nys3cr3tz
 type configuration struct {
 	Host              string
 	Listen            string
 	CertFile, KeyFile string
-	HtPasswdFile      string
+	Authenticate      bool
+	Users             map[string]string
 }
 
 var conf configuration
@@ -47,16 +51,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	var config = flag.String("c", "config.yaml", "Load configuration from file")
-	var makehash = flag.String("makehash", "s3cr3t", "make a password hash")
 	flag.Parse()
-
-	if *makehash != "s3cr3t" {
-		fmt.Printf("$1$%s\n", auth.MD5Crypt(
-			[]byte(*makehash),
-			randomBytes(5),
-			randomBytes(5)))
-		os.Exit(0)
-	}
 
 	// load the local configuration file
 	fd, err := ioutil.ReadFile(*config)
@@ -72,14 +67,8 @@ func main() {
 	srv.Addr = conf.Listen
 
 	r := mux.NewRouter()
-	if conf.HtPasswdFile != "" {
-		authenticator := auth.NewBasicAuthenticator(conf.Host, auth.HtpasswdFileProvider(conf.HtPasswdFile))
-		r.HandleFunc("/", auth.JustCheck(authenticator, home)).Methods("GET")
-		r.HandleFunc("/gallery/{galpath:.*}", auth.JustCheck(authenticator, serveGallery)).Methods("GET")
-	} else {
-		r.HandleFunc("/", home).Methods("GET")
-		r.HandleFunc("/gallery/{galpath:.*}", serveGallery).Methods("GET")
-	}
+	r.HandleFunc("/", authenticate(home)).Methods("GET")
+	r.HandleFunc("/gallery/{galpath:.*}", authenticate(serveGallery)).Methods("GET")
 
 	fs := http.FileServer(http.Dir(`./statics`))
 	r.Handle("/statics/{staticfile}", http.StripPrefix("/statics", fs)).Methods("GET")
@@ -89,6 +78,52 @@ func main() {
 	log.Fatal(srv.ListenAndServeTLS(conf.CertFile, conf.KeyFile))
 }
 
+// handler defines the type returned by the authenticate function
+type handler func(w http.ResponseWriter, r *http.Request)
+
+// authenticate is called prior to processing incoming requests. it implements the client
+// authentication logic, which mostly consist of validating basic auth
+func authenticate(pass handler) handler {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !conf.Authenticate {
+			pass(w, r)
+		}
+		var (
+			authbytes []byte
+			authstr   string
+			username  string
+			password  string
+			err       error
+		)
+		if len(r.Header.Get("Authorization")) < 8 || r.Header.Get("Authorization")[0:5] != `Basic` {
+			log.Printf("auth failed: basic auth header not found")
+			goto unauthorized
+		}
+		authbytes, err = base64.StdEncoding.DecodeString(r.Header.Get("Authorization")[6:])
+		if err != nil {
+			log.Printf("auth failed: error while decoding basic auth header %q: %v", r.Header.Get("Authorization"), err)
+			goto unauthorized
+		}
+		authstr = fmt.Sprintf("%s", authbytes)
+		username = authstr[0:strings.Index(authstr, ":")]
+		password = authstr[strings.Index(authstr, ":")+1:]
+		if _, ok := conf.Users[username]; ok {
+			if password == conf.Users[username] {
+				pass(w, r)
+			} else {
+				log.Printf("auth failed: password %q is not valid for user %q", password, username)
+			}
+		} else {
+			log.Printf("auth failed: user %q is not listed as authorized", username)
+		}
+	unauthorized:
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, conf.Host))
+		w.WriteHeader(401)
+		w.Write([]byte(`please authenticate`))
+		return
+	}
+}
 func home(w http.ResponseWriter, r *http.Request) {
 	// The "/" pattern matches everything, so we need to check
 	// that we're at the root here.

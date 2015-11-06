@@ -2,4 +2,6 @@ host: example.net
 listen: 0.0.0.0:8064
 certfile: /etc/galilego/server.crt
 keyfile: /etc/galilego/server.key
-htpasswdfile: /etc/galilego/users.htpasswd
+authenticate: true
+users:
+    bobkelso: fearatude
