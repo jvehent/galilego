@@ -43,6 +43,17 @@ type configuration struct {
 
 var conf configuration
 
+type Image struct {
+	path       string
+	size       uint
+	fd         *os.File
+	modtime    time.Time
+	returnchan chan Image
+	err        error
+}
+
+var reqimage chan Image
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s - HTTP/2 web gallery written in Go\n"+
@@ -62,6 +73,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
+
+	reqimage = make(chan Image)
+	go getImage()
 
 	var srv http.Server
 	srv.Addr = conf.Listen
@@ -162,16 +176,24 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
-		img, imgModTime, err := getImage(galpath, uint(width))
-		if err != nil {
+		var img = Image{
+			path:       galpath,
+			size:       uint(width),
+			returnchan: make(chan Image),
+		}
+		// request an image
+		reqimage <- img
+		// receive the response when ready, only one image at a time is processed
+		img = <-img.returnchan
+		if img.err != nil {
 			log.Println(err)
 		}
 		// set expires header to +1 year
 		in1year, _ := time.ParseDuration("8760h")
 		exp := time.Now().Add(in1year)
 		w.Header().Set("Expires", exp.Format(time.RFC1123))
-		http.ServeContent(w, r, galpath, imgModTime, img)
-		img.Close()
+		http.ServeContent(w, r, galpath, img.modtime, img.fd)
+		img.fd.Close()
 	} else {
 		dirHtml, imgHtml := genGalleryHtml(galpath)
 		galNav := getGalNav(r.RequestURI)
@@ -249,66 +271,72 @@ func genGalleryHtml(path string) (dirHtml, imgHtml string) {
 	return
 }
 
-func getImage(path string, size uint) (fd *os.File, modtime time.Time, err error) {
-	var fi os.FileInfo
-	if size == 0 {
-		// if size is zero, serve the file directly
-		fd, err = os.Open(path)
-		if err != nil {
-			return
+func getImage() {
+	var (
+		cachedPath string
+	)
+	//path string, size uint) (fd *os.File, modtime time.Time, err error) {
+	for img := range reqimage {
+		var fi os.FileInfo
+		if img.size == 0 {
+			// if size is zero, serve the file directly
+			img.fd, img.err = os.Open(img.path)
+			if img.err != nil {
+				goto publish
+			}
+			fi, img.err = os.Stat(img.path)
+			if img.err != nil {
+				goto publish
+			}
+			img.modtime = fi.ModTime()
+			goto publish
 		}
-		fi, err = os.Stat(path)
-		if err != nil {
-			return
-		}
-		modtime = fi.ModTime()
-		return
-	}
-	cachedPath := fmt.Sprintf("imgcache/%s_%d", path, size)
-	_, err = os.Stat(cachedPath)
-	if err != nil {
-		// just in case the directory doesn't exist yet...
-		os.MkdirAll(filepath.Dir(cachedPath), 0755)
+		cachedPath = fmt.Sprintf("imgcache/%s_%d", img.path, img.size)
+		_, img.err = os.Stat(cachedPath)
+		if img.err != nil {
+			// just in case the directory doesn't exist yet...
+			os.MkdirAll(filepath.Dir(cachedPath), 0755)
 
-		// generate the cached file
-		fd, err = os.Open(path)
-		if err != nil {
-			return
-		}
+			// generate the cached file
+			img.fd, img.err = os.Open(img.path)
+			if img.err != nil {
+				goto publish
+			}
 
-		// decode jpeg into image.Image
-		var img image.Image
-		img, err = jpeg.Decode(fd)
-		if err != nil {
-			return
-		}
-		fd.Close()
+			// decode jpeg into image.Image
+			var jpegimg image.Image
+			jpegimg, img.err = jpeg.Decode(img.fd)
+			if img.err != nil {
+				goto publish
+			}
+			img.fd.Close()
 
-		// resize to width 1000 using Lanczos resampling
-		// and preserve aspect ratio
-		m := resize.Thumbnail(size, size, img, resize.NearestNeighbor)
+			// resize to width 1000 using Lanczos resampling
+			// and preserve aspect ratio
+			m := resize.Thumbnail(img.size, img.size, jpegimg, resize.NearestNeighbor)
 
-		fd, err = os.Create(cachedPath)
-		if err != nil {
-			log.Fatal(err)
-		}
+			img.fd, img.err = os.Create(cachedPath)
+			if img.err != nil {
+				goto publish
+			}
 
-		// write new image to file
-		jpeg.Encode(fd, m, nil)
-		modtime = time.Now()
-		return
-	} else {
-		// cached file exists, use it
-		fd, err = os.Open(cachedPath)
-		if err != nil {
-			return
+			// write new image to file
+			jpeg.Encode(img.fd, m, nil)
+			img.modtime = time.Now()
+		} else {
+			// cached file exists, use it
+			img.fd, img.err = os.Open(cachedPath)
+			if img.err != nil {
+				goto publish
+			}
+			fi, img.err = os.Stat(cachedPath)
+			if img.err != nil {
+				goto publish
+			}
+			img.modtime = fi.ModTime()
 		}
-		fi, err = os.Stat(cachedPath)
-		if err != nil {
-			return
-		}
-		modtime = fi.ModTime()
-		return
+	publish:
+		img.returnchan <- img
 	}
 }
 
