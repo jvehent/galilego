@@ -181,6 +181,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 			size:       uint(width),
 			returnchan: make(chan Image),
 		}
+		defer close(img.returnchan)
 		// request an image
 		reqimage <- img
 		// receive the response when ready, only one image at a time is processed
