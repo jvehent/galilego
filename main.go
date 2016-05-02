@@ -18,7 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bradfitz/http2"
 	"github.com/gorilla/mux"
 	"github.com/nfnt/resize"
 	"gopkg.in/yaml.v2"
@@ -88,7 +87,6 @@ func main() {
 	r.Handle("/statics/{staticfile}", http.StripPrefix("/statics", fs)).Methods("GET")
 
 	http.Handle("/", r)
-	http2.ConfigureServer(&srv, &http2.Server{})
 	log.Fatal(srv.ListenAndServeTLS(conf.CertFile, conf.KeyFile))
 }
 
@@ -203,7 +201,7 @@ func serveGallery(w http.ResponseWriter, r *http.Request) {
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<script src="/statics/jquery-2.1.4.min.js"></script>
+		<script src="/statics/jquery-2.2.3.min.js"></script>
 		<script src="/statics/jssor.slider.mini.js"></script>
 		`+jssorParameters+`
 		<title>Galilego HTTP/2 web gallery</title>
@@ -361,7 +359,7 @@ var jssorParameters string = `
 				{$Duration: 400, x: 0.3, $During: { $Left: [0.3, 0.7] }, $Easing: { $Left: $JssorEasing$.$EaseInCubic, $Opacity: $JssorEasing$.$EaseLinear }, $Opacity: 2 }
 			];
 			var options = {
-				$FillMode: 1,                                   //[Optional] The way to fill image in slide, 0 stretch, 1 contain (keep aspect ratio and put all inside slide), 2 cover (keep aspect ratio and cover whole slide), 4 actual size, 5 contain for large image, actual size for small image, default value is 0
+				$FillMode: 5,                                   //[Optional] The way to fill image in slide, 0 stretch, 1 contain (keep aspect ratio and put all inside slide), 2 cover (keep aspect ratio and cover whole slide), 4 actual size, 5 contain for large image, actual size for small image, default value is 0
 				$Loop: 2,					//[Optional] Enable loop(circular) of carousel or not, 0: stop, 1: loop, 2 rewind, default value is 1
 				$AutoPlay: true,				//[Optional] Whether to auto play, to enable slideshow, this option must be set to true, default value is false
 				$AutoPlayInterval: 3000,			//[Optional] Interval (in milliseconds) to go for next slide since the previous stopped if the slider is auto playing, default value is 3000
