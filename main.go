@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -76,9 +77,6 @@ func main() {
 	reqimage = make(chan Image)
 	go getImage()
 
-	var srv http.Server
-	srv.Addr = conf.Listen
-
 	r := mux.NewRouter()
 	r.HandleFunc("/", authenticate(home)).Methods("GET")
 	r.HandleFunc("/gallery/{galpath:.*}", authenticate(serveGallery)).Methods("GET")
@@ -87,6 +85,19 @@ func main() {
 	r.Handle("/statics/{staticfile}", http.StripPrefix("/statics", fs)).Methods("GET")
 
 	http.Handle("/", r)
+
+	var srv http.Server
+	srv.Addr = conf.Listen
+	srv.TLSConfig = &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		},
+	}
 	log.Fatal(srv.ListenAndServeTLS(conf.CertFile, conf.KeyFile))
 }
 
