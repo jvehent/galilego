@@ -108,6 +108,10 @@ type handler func(w http.ResponseWriter, r *http.Request)
 // authentication logic, which mostly consist of validating basic auth
 func authenticate(pass handler) handler {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Add("X-Content-Type-Options", "nosniff")
+		w.Header().Add("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		w.Header().Add("Public-Key-Pins", `max-age=1296000; includeSubDomains; pin-sha256="YLh1dUR9y6Kja30RrAn7JKnbQG/uEtLMkBgFF2Fuihg="; pin-sha256="5C8kvU039KouVrl52D0eZSGf4Onjo4Khs8tmyTlV3nU=";`)
 		if !conf.Authenticate {
 			pass(w, r)
 		}
